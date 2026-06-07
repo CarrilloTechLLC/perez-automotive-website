@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Perez Automotive luxury GTA/Eclipse RP dealership website and staff management portal." />
+  <title>Perez Automotive | Luxury Dealership & Staff Portal</title>
+  <link rel="icon" href="assets/perez-logo.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="site-shell">
+    <header class="topbar" id="topbar">
+      <a class="brand" href="#home" aria-label="Perez Automotive Home">
+        <img src="assets/perez-logo.png" alt="Perez Automotive logo" />
+        <span><strong>Perez</strong> Automotive</span>
+      </a>
+      <button class="menu-toggle" id="menuToggle" aria-label="Open navigation">☰</button>
+      <nav class="main-nav" id="mainNav" aria-label="Main navigation">
+        <a href="#home">Home</a>
+        <a href="#about">About</a>
+        <a href="#services">Services</a>
+        <a href="#inventory">Inventory</a>
+        <a href="#careers">Apply</a>
+        <a href="#contact">Contact</a>
+        <a class="nav-login" href="#login" id="loginNav">Staff Login</a>
+      </nav>
+    </header>
+
+    <main id="app" class="app" tabindex="-1"></main>
+
+    <footer class="footer">
+      <div>
+        <img src="assets/perez-logo.png" alt="Perez Automotive logo" />
+        <p><strong>Perez Automotive</strong><br />74 Spanish Ave · Los Santos</p>
+      </div>
+      <p>Premium used vehicles · Custom builds · Trade-ins · Vehicle sourcing · Repairs · Detailing</p>
+    </footer>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
