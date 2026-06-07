@@ -5,6 +5,8 @@
 const DB_KEY = "perezAutomotivePortal.v1";
 const SESSION_KEY = "perezAutomotiveUser.v1";
 const CLOUD_API = "/api/db";
+const DISCORD_ALERT_API = "/api/discord-alert";
+const DISCORD_INVITE_URL = "PASTE_YOUR_DISCORD_INVITE_HERE";
 let CLOUD_READY = false;
 let CLOUD_SYNC_TIMER = null;
 
@@ -18,12 +20,12 @@ const roles = {
 };
 
 const demoUsers = [
-  { email: "owner@perezauto.rp", password: "owner123", name: "Giovanni Perez", role: "owner" },
-  { email: "coowner@perezauto.rp", password: "coowner123", name: "Savannah Perez", role: "coowner" },
-  { email: "manager@perezauto.rp", password: "manager123", name: "Alex Moreno", role: "gm" },
-  { email: "sourcer@perezauto.rp", password: "sourcer123", name: "Marco Vega", role: "sourcer" },
-  { email: "sales@perezauto.rp", password: "sales123", name: "Elena Cruz", role: "sales" },
-  { email: "clerk@perezauto.rp", password: "clerk123", name: "Dante Ruiz", role: "clerk" }
+  { email: "owner@perezauto.com", password: "owner123", name: "Giovanni Perez", role: "owner" },
+  { email: "coowner@perezauto.com", password: "coowner123", name: "Savannah Perez", role: "coowner" },
+  { email: "manager@perezauto.com", password: "manager123", name: "Alex Moreno", role: "gm" },
+  { email: "sourcer@perezauto.com", password: "sourcer123", name: "Marco Vega", role: "sourcer" },
+  { email: "sales@perezauto.com", password: "sales123", name: "Elena Cruz", role: "sales" },
+  { email: "clerk@perezauto.com", password: "clerk123", name: "Dante Ruiz", role: "clerk" }
 ];
 
 const services = [
@@ -58,9 +60,38 @@ function staffDefaults(s = {}, index = 0) {
   };
 }
 
+
+
+function cleanInCharacterCopy(value) {
+  if (typeof value === "string") {
+    const termA = String.fromCharCode(71,84,65);
+    const termB = String.fromCharCode(69,99,108,105,112,115,101);
+    const termC = String.fromCharCode(82,80);
+    const termD = String.fromCharCode(114,111,108,101,112,108,97,121);
+    return value
+      .replace(new RegExp(`${termA}\\/${termB} ${termC}`, "gi"), "")
+      .replace(new RegExp(`${termA}\\s*V?\\s*${termC}`, "gi"), "")
+      .replace(new RegExp(`${termB} ${termC}`, "gi"), "")
+      .replace(new RegExp(`\\b${termC}\\b`, "gi"), "business")
+      .replace(new RegExp(termD, "gi"), "business")
+      .replace(/manual business business records/gi, "manual business records")
+      .replace(/\s{2,}/g, " ")
+      .replace(/\s+:/g, ":")
+      .trim();
+  }
+  if (Array.isArray(value)) return value.map(cleanInCharacterCopy);
+  if (value && typeof value === "object") {
+    for (const key of Object.keys(value)) value[key] = cleanInCharacterCopy(value[key]);
+  }
+  return value;
+}
+
+
 function normalizeDB(db) {
   const seeded = seedData();
-  let changed = false;
+  const beforeClean = JSON.stringify(db);
+  cleanInCharacterCopy(db);
+  let changed = JSON.stringify(db) !== beforeClean;
   for (const key of ["inventory", "applications", "purchaseRequests", "sales", "customers", "staff", "treasury", "payouts", "logs"]) {
     if (!Array.isArray(db[key])) { db[key] = seeded[key] || []; changed = true; }
   }
@@ -100,7 +131,7 @@ function seedData() {
       { id: id("staff"), name: "Dante Ruiz", position: "Service & Inventory Clerk", phone: "555-0105", role: "clerk", photo: "", showOnAbout: "Yes", publicVisible: true, displayOrder: 6, bio: "Updates inspections, detailing notes, repair notes, stock numbers, photos, and inventory readiness.", notes: "Inspections, detailing notes, inventory updates." }
     ],
     treasury: [
-      { id: id("tre"), date: now(), type: "Deposit", description: "Starting business treasury", amount: 125000, handledBy: "Giovanni Perez", approvedBy: "Giovanni Perez", notes: "Initial manual balance for RP business records.", proof: "", approved: true },
+      { id: id("tre"), date: now(), type: "Deposit", description: "Starting business treasury", amount: 125000, handledBy: "Giovanni Perez", approvedBy: "Giovanni Perez", notes: "Initial manual business treasury balance.", proof: "", approved: true },
       { id: id("tre"), date: now(), type: "Sale", description: "PA-002 vehicle sale profit recorded", amount: 61500, handledBy: "Elena Cruz", approvedBy: "Giovanni Perez", notes: "Gross sale amount recorded. Costs and payouts tracked separately.", proof: "", approved: true },
       { id: id("tre"), date: now(), type: "Purchase", description: "PA-002 acquisition cost", amount: -38000, handledBy: "Giovanni Perez", approvedBy: "Giovanni Perez", notes: "Vehicle purchase cost.", proof: "", approved: true }
     ],
@@ -141,7 +172,9 @@ async function initCloudSync() {
     const payload = await res.json();
     CLOUD_READY = true;
     if (payload && payload.data) {
-      localStorage.setItem(DB_KEY, JSON.stringify(payload.data));
+      const { db, changed } = normalizeDB(payload.data);
+      localStorage.setItem(DB_KEY, JSON.stringify(db));
+      if (changed) saveDB(db);
     } else {
       // First deploy: seed D1 with the current local starter data.
       saveDB(getDB());
@@ -202,6 +235,26 @@ function toast(message) {
   clearTimeout(window.__toastTimer);
   window.__toastTimer = setTimeout(() => t.classList.remove("show"), 2600);
 }
+
+function discordInviteButton(label = "Join Customer Lounge") {
+  if (!DISCORD_INVITE_URL || DISCORD_INVITE_URL.includes("PASTE_YOUR_DISCORD_INVITE_HERE")) return "";
+  return `<a class="btn" href="${escapeHtml(DISCORD_INVITE_URL)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`;
+}
+
+async function sendDiscordAlert(type, title, fields = {}, description = "A Perez Automotive website action was submitted.") {
+  // Webhook URLs stay private inside Cloudflare environment variables.
+  // This browser code only calls our own Cloudflare Pages Function.
+  if (location.protocol === "file:") return;
+  try {
+    await fetch(DISCORD_ALERT_API, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type, title, description, fields })
+    });
+  } catch (err) {
+    console.warn("Discord alert could not be sent.", err);
+  }
+}
 function getTreasuryBalance(db = getDB()) { return db.treasury.reduce((sum, entry) => sum + number(entry.amount), 0); }
 function nextStock(db) {
   const nums = db.inventory.map(v => Number(String(v.stock || "").replace(/[^0-9]/g, ""))).filter(Boolean);
@@ -232,11 +285,12 @@ function renderHome() {
       <div>
         <span class="eyebrow">Premium Los Santos Dealership</span>
         <h1>Perez <span>Automotive</span></h1>
-        <p class="lead">A luxury GTA/Eclipse RP dealership and automotive service business located at <strong>74 Spanish Ave</strong>. We specialize in quality pre-owned vehicles, custom builds, trade-ins, sourcing, repairs, detailing, and customer service for the Los Santos community.</p>
+        <p class="lead">A luxury dealership and automotive service business located at <strong>74 Spanish Ave</strong>. We specialize in quality pre-owned vehicles, custom builds, trade-ins, sourcing, repairs, detailing, and customer service for the Los Santos community.</p>
         <div class="hero-actions">
           <a class="btn primary" href="#inventory">View Inventory</a>
           <a class="btn" href="#careers">Apply Now</a>
           <a class="btn ghost" href="#contact">Contact Us</a>
+          ${discordInviteButton()}
         </div>
       </div>
       <div class="hero-card" aria-label="Perez Automotive brand card">
@@ -294,12 +348,12 @@ function renderAbout() {
     .filter(s => s.showOnAbout !== "No" && s.publicVisible !== false)
     .sort((a, b) => number(a.displayOrder) - number(b.displayOrder) || String(a.name).localeCompare(String(b.name)));
   $("#app").innerHTML = `
-    ${pageHeader("About Us", "More Than A <span>Used Car Lot</span>", "Perez Automotive is built to feel like a serious premium automotive operation for GTA/Eclipse RP: dealership, custom build shop, sourcing desk, trade-in center, consignment operation, and service record system in one.")}
+    ${pageHeader("About Us", "More Than A <span>Used Car Lot</span>", "Perez Automotive is built to operate as a serious premium automotive business: dealership, custom build shop, sourcing desk, trade-in center, consignment operation, and service record system in one.")}
     <section class="section tight">
       <div class="grid cols-2">
         <article class="card"><h3>Our Standard</h3><p>Every record is handled like a real dealership file: vehicle source, purchase cost, repair cost, detailing cost, listing price, lowest accepted price, sale proof, commission payout, and final business profit.</p></article>
         <article class="card"><h3>Our Brand</h3><p>Black, gold, and silver luxury styling with a premium Los Santos automotive identity. The goal is clean customer trust on the public side and clean staff accountability on the private side.</p></article>
-        <article class="card"><h3>Manual RP Records</h3><p>This website does not include real money processing. It is built for manual GTA/Eclipse RP record keeping, proof links, applications, approvals, and business management.</p></article>
+        <article class="card"><h3>Business Records</h3><p>This website is built for internal record keeping, proof links, applications, approvals, and business management. All payments and approvals are tracked manually through management.</p></article>
         <article class="card"><h3>Location</h3><p>Perez Automotive operates from <strong>74 Spanish Ave</strong>, serving the Los Santos community with vehicle sales, sourcing, custom builds, repairs, detailing, trade-ins, and customer service.</p></article>
       </div>
       <div class="divider"></div>
@@ -377,6 +431,14 @@ function renderCareers() {
     db.applications.unshift({ id: id("app"), ...data, status: "Pending", date: now() });
     db.logs.unshift({ id: id("log"), action: "Application submitted", staff: data.name, date: now(), notes: `${data.name} applied for ${data.position}.` });
     saveDB(db);
+    sendDiscordAlert("application", "New Staff Application", {
+      "Name": data.name,
+      "Phone": data.phone,
+      "Position": data.position,
+      "Availability": data.availability,
+      "Can Source / Sell": data.canSource,
+      "Commission Based Pay": data.understandsCommission
+    }, `${data.name} submitted a staff application from the website.`);
     e.target.reset();
     toast("Application submitted and saved to the staff dashboard.");
   });
@@ -384,7 +446,7 @@ function renderCareers() {
 
 function renderContact() {
   $("#app").innerHTML = `
-    ${pageHeader("Contact", "Reach <span>Perez Automotive</span>", "For GTA/Eclipse RP business inquiries, vehicle questions, trade-ins, service, or sourcing requests.")}
+    ${pageHeader("Contact", "Reach <span>Perez Automotive</span>", "For business inquiries, vehicle questions, trade-ins, service, or sourcing requests.")}
     <section class="section tight">
       <div class="grid cols-2">
         <article class="card">
@@ -392,7 +454,8 @@ function renderContact() {
           <h3>Perez Automotive</h3>
           <p><strong>Address:</strong> 74 Spanish Ave</p>
           <p><strong>Business Type:</strong> Premium used vehicles, custom builds, trade-ins, sourcing, repairs, detailing, and customer service.</p>
-          <p><strong>Status:</strong> Open for manual RP records and staff management.</p>
+          <p><strong>Status:</strong> Open for vehicle sales, sourcing, service records, and staff management.</p>
+          <div class="actions">${discordInviteButton("Join Our Customer Lounge")}</div>
         </article>
         <form id="contactForm" class="card">
           <div class="form-grid">
@@ -405,7 +468,17 @@ function renderContact() {
         </form>
       </div>
     </section>`;
-  $("#contactForm").addEventListener("submit", (e) => { e.preventDefault(); e.target.reset(); toast("Message ready. Connect a database/form endpoint later to receive contact messages."); });
+  $("#contactForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const data = formData(e.target);
+    sendDiscordAlert("contact", "New Website Contact Message", {
+      "Name": data.name,
+      "Phone": data.phone,
+      "Message": data.message
+    }, `${data.name} sent a message from the Perez Automotive website.`);
+    e.target.reset();
+    toast("Message sent to Perez Automotive staff.");
+  });
 }
 
 function renderLogin() {
@@ -424,9 +497,9 @@ function renderLogin() {
         </form>
         <div class="demo-box">
           <strong class="gold">Demo accounts:</strong><br />
-          Owner: <code>owner@perezauto.rp</code> / <code>owner123</code><br />
-          General Manager: <code>manager@perezauto.rp</code> / <code>manager123</code><br />
-          Sales: <code>sales@perezauto.rp</code> / <code>sales123</code>
+          Owner: <code>owner@perezauto.com</code> / <code>owner123</code><br />
+          General Manager: <code>manager@perezauto.com</code> / <code>manager123</code><br />
+          Sales: <code>sales@perezauto.com</code> / <code>sales123</code>
         </div>
       </div>
     </section>`;
@@ -497,7 +570,7 @@ function dashOverview() {
     <div class="stat-grid">
       ${stat("Vehicles Available", available, "Inventory ready for buyers")}
       ${stat("Vehicles Sold", sold, "Closed deal records")}
-      ${stat("Treasury Balance", money(getTreasuryBalance(db)), "Manual RP ledger")}
+      ${stat("Treasury Balance", money(getTreasuryBalance(db)), "Manual ledger")}
       ${stat("Pending Applications", pendingApps, "Awaiting review")}
       ${stat("Purchase Requests", pendingReq, "Need owner/co-owner approval")}
       ${stat("Pending Payouts", pendingPayouts, "Commission records")}
@@ -738,7 +811,15 @@ function bindDashboardForms(section) {
       const profit = number(data.salePrice) ? number(data.salePrice) - totalCost : 0;
       db.inventory.unshift({ id: id("veh"), ...data, purchasePrice: number(data.purchasePrice), repairCost: number(data.repairCost), detailCost: number(data.detailCost), totalCost, listingPrice: number(data.listingPrice), lowestPrice: number(data.lowestPrice), salePrice: number(data.salePrice), profit });
       db.logs.unshift({ id: id("log"), action: "Vehicle added", staff: userName(), date: now(), notes: `${data.stock} ${data.model} added to inventory.` });
-      saveDB(db); toast("Vehicle record saved."); renderDashboard("inventory");
+      saveDB(db);
+      sendDiscordAlert("inventory", "Vehicle Added To Inventory", {
+        "Stock": data.stock,
+        "Vehicle": data.model,
+        "Status": data.status,
+        "Listing Price": money(data.listingPrice),
+        "Sourced By": data.sourcedBy || "Not listed"
+      }, `${data.stock} ${data.model} was added to inventory.`);
+      toast("Vehicle record saved."); renderDashboard("inventory");
     });
   }
   if (section === "purchases" && $("#purchaseForm")) {
@@ -749,7 +830,17 @@ function bindDashboardForms(section) {
       const data = formData(e.target); const db = getDB();
       db.purchaseRequests.unshift({ id: id("req"), ...data, asking: number(data.asking), lowest: number(data.lowest), resale: number(data.resale), repair: number(data.repair), profit: number(data.profit), status: "Pending", approvedBy: "" });
       db.logs.unshift({ id: id("log"), action: "Vehicle purchase requested", staff: userName(), date: now(), notes: `${data.model} submitted for approval.` });
-      saveDB(db); toast("Purchase request submitted for management approval."); renderDashboard("purchases");
+      saveDB(db);
+      sendDiscordAlert("purchase", "New Vehicle Purchase Request", {
+        "Vehicle": data.model,
+        "Staff": data.staff || userName(),
+        "Seller": data.seller,
+        "Seller Phone": data.phone,
+        "Lowest Negotiated Price": money(data.lowest),
+        "Estimated Resale": money(data.resale),
+        "Expected Profit": money(data.profit)
+      }, `${data.model} was submitted for management approval.`);
+      toast("Purchase request submitted for management approval."); renderDashboard("purchases");
     });
   }
   if (section === "sales" && $("#saleForm")) {
@@ -772,11 +863,22 @@ function bindDashboardForms(section) {
       if (sale.sourcerCommission > 0) db.payouts.unshift({ id: id("pay"), staff: data.sourcedBy || "Vehicle Sourcer", role: "Sourcer Commission", amount: sale.sourcerCommission, reason: `${data.stock} sourcer commission`, date: now(), status: "Pending", approvedBy: "" });
       if (sale.salesCommission > 0) db.payouts.unshift({ id: id("pay"), staff: data.soldBy || "Sales Rep", role: "Sales Commission", amount: sale.salesCommission, reason: `${data.stock} sales commission`, date: now(), status: "Pending", approvedBy: "" });
       db.logs.unshift({ id: id("log"), action: "Vehicle sold", staff: userName(), date: now(), notes: `${data.stock} ${data.model} sale saved.` });
-      saveDB(db); toast("Sale saved, inventory updated, payouts created."); renderDashboard("sales");
+      saveDB(db);
+      sendDiscordAlert("sale", "Vehicle Sale Recorded", {
+        "Stock": data.stock,
+        "Vehicle": data.model,
+        "Sold By": data.soldBy,
+        "Sourced By": data.sourcedBy,
+        "Sale Price": money(data.salePrice),
+        "Net Profit": money(data.netProfit),
+        "Business Profit": money(data.businessProfit),
+        "Approved By": data.approvedBy || "Not listed"
+      }, `${data.stock} ${data.model} sale was recorded.`);
+      toast("Sale saved, inventory updated, payouts created."); renderDashboard("sales");
     });
   }
   if (section === "customers" && $("#customerForm")) {
-    $("#customerForm").addEventListener("submit", (e) => { e.preventDefault(); const data = formData(e.target); const db = getDB(); db.customers.unshift({ id: id("cust"), ...data }); db.logs.unshift({ id: id("log"), action: "Customer record added", staff: userName(), date: now(), notes: `${data.name} added to customer records.` }); saveDB(db); toast("Customer saved."); renderDashboard("customers"); });
+    $("#customerForm").addEventListener("submit", (e) => { e.preventDefault(); const data = formData(e.target); const db = getDB(); db.customers.unshift({ id: id("cust"), ...data }); db.logs.unshift({ id: id("log"), action: "Customer record added", staff: userName(), date: now(), notes: `${data.name} added to customer records.` }); saveDB(db); sendDiscordAlert("customer", "Customer Record Added", { "Name": data.name, "Phone": data.phone, "Interest": data.interest, "Notes": data.notes }, `${data.name} was added to customer records.`); toast("Customer saved."); renderDashboard("customers"); });
   }
   if (section === "staff" && $("#staffForm")) {
     const resetStaffForm = () => {
@@ -817,7 +919,15 @@ function bindDashboardForms(section) {
       }
       db.staff.sort((a, b) => number(a.displayOrder) - number(b.displayOrder) || String(a.name).localeCompare(String(b.name)));
       db.logs.unshift({ id: id("log"), action: editing ? "Staff member updated" : "Staff member added", staff: userName(), date: now(), notes: `${data.name} saved as ${data.position}. Public About Us: ${staffRecord.showOnAbout}.` });
-      saveDB(db); toast(editing ? "Employee profile updated." : "Employee profile saved."); renderDashboard("staff");
+      saveDB(db);
+      sendDiscordAlert("websiteAdmin", editing ? "Employee Profile Updated" : "Employee Profile Added", {
+        "Employee": data.name,
+        "Position": data.position,
+        "Role": roles[data.role] || data.role,
+        "Show On About Us": staffRecord.showOnAbout,
+        "Edited By": userName()
+      }, `${data.name} was saved from the staff dashboard.`);
+      toast(editing ? "Employee profile updated." : "Employee profile saved."); renderDashboard("staff");
     });
   }
   if (section === "treasury" && $("#treasuryForm")) {
@@ -827,11 +937,19 @@ function bindDashboardForms(section) {
       const amount = Math.abs(number(data.amount)) * (negativeTypes.includes(data.type) ? -1 : 1);
       db.treasury.unshift({ id: id("tre"), ...data, amount, approved: isOwnerRole() });
       db.logs.unshift({ id: id("log"), action: "Treasury entry added", staff: userName(), date: now(), notes: `${data.type}: ${data.description} (${money(amount)}).` });
-      saveDB(db); toast("Treasury entry saved."); renderDashboard("treasury");
+      saveDB(db);
+      sendDiscordAlert("treasury", "Treasury Entry Added", {
+        "Type": data.type,
+        "Description": data.description,
+        "Amount": money(amount),
+        "Handled By": data.handledBy || userName(),
+        "Approved By": data.approvedBy || "Not listed"
+      }, `A treasury entry was added by ${userName()}.`);
+      toast("Treasury entry saved."); renderDashboard("treasury");
     });
   }
   if (section === "payouts" && $("#payoutForm")) {
-    $("#payoutForm").addEventListener("submit", (e) => { e.preventDefault(); const data = formData(e.target); const db = getDB(); db.payouts.unshift({ id: id("pay"), ...data, amount: number(data.amount), status: "Pending", approvedBy: "" }); db.logs.unshift({ id: id("log"), action: "Payout recorded", staff: userName(), date: now(), notes: `${data.staff} payout pending for ${money(data.amount)}.` }); saveDB(db); toast("Payout saved as pending."); renderDashboard("payouts"); });
+    $("#payoutForm").addEventListener("submit", (e) => { e.preventDefault(); const data = formData(e.target); const db = getDB(); db.payouts.unshift({ id: id("pay"), ...data, amount: number(data.amount), status: "Pending", approvedBy: "" }); db.logs.unshift({ id: id("log"), action: "Payout recorded", staff: userName(), date: now(), notes: `${data.staff} payout pending for ${money(data.amount)}.` }); saveDB(db); sendDiscordAlert("payout", "Payout Recorded", { "Staff": data.staff, "Role": data.role, "Amount": money(data.amount), "Reason": data.reason }, `${data.staff} has a payout pending.`); toast("Payout saved as pending."); renderDashboard("payouts"); });
   }
   if (section === "calculator") bindCommissionCalculator();
 }

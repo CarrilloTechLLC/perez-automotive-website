@@ -1,6 +1,6 @@
 # Perez Automotive Website + Staff Portal
 
-A luxury black, gold, and silver dealership website for Perez Automotive, built for GTA/Eclipse RP manual business records.
+A luxury black, gold, and silver dealership website and staff management portal for Perez Automotive.
 
 ## What is included
 
@@ -25,12 +25,12 @@ This first version uses browser `localStorage`, so it saves records on the devic
 
 ## Demo staff logins
 
-- Owner: `owner@perezauto.rp` / `owner123`
-- Co-Owner: `coowner@perezauto.rp` / `coowner123`
-- General Manager: `manager@perezauto.rp` / `manager123`
-- Sourcer: `sourcer@perezauto.rp` / `sourcer123`
-- Sales: `sales@perezauto.rp` / `sales123`
-- Clerk: `clerk@perezauto.rp` / `clerk123`
+- Owner: `owner@perezauto.com` / `owner123`
+- Co-Owner: `coowner@perezauto.com` / `coowner123`
+- General Manager: `manager@perezauto.com` / `manager123`
+- Sourcer: `sourcer@perezauto.com` / `sourcer123`
+- Sales: `sales@perezauto.com` / `sales123`
+- Clerk: `clerk@perezauto.com` / `clerk123`
 
 ## GitHub + Cloudflare Pages deployment
 
@@ -82,4 +82,4 @@ Open the D1 database console and run the contents of `schema.sql` once.
 
 ### Important security note
 
-This version is built for GTA/Eclipse RP record keeping and easy setup. For a real secure private dashboard, protect the site with Cloudflare Access or add server-side authentication before using sensitive records.
+This version is built for business record keeping and easy setup. For a real secure private dashboard, protect the site with Cloudflare Access or add server-side authentication before using sensitive records.
