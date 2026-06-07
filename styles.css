@@ -182,7 +182,7 @@ button { cursor: pointer; }
 .card.hover:hover { transform: translateY(-4px); border-color: rgba(216,170,70,.48); }
 .card h3 { margin: 0 0 10px; font-size: 21px; }
 .card p { color: var(--muted); line-height: 1.65; margin: 0; }
-.icon { width: 44px; height: 44px; display: grid; place-items: center; margin-bottom: 16px; border-radius: 15px; color: #161616; background: linear-gradient(135deg, var(--gold), var(--gold-2)); font-weight: 900; }
+.icon { min-width: 54px; width: fit-content; height: 44px; display: inline-grid; place-items: center; margin-bottom: 16px; padding: 0 12px; border-radius: 15px; color: #161616; background: linear-gradient(135deg, var(--gold), var(--gold-2)); font-weight: 900; white-space: nowrap; }
 .page-title { max-width: 980px; }
 .page-title h1 { font-size: clamp(40px, 7vw, 78px); }
 .kicker { color: var(--gold-2); text-transform: uppercase; letter-spacing: .19em; font-size: 12px; }
