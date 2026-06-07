@@ -6,7 +6,7 @@ const DB_KEY = "perezAutomotivePortal.v1";
 const SESSION_KEY = "perezAutomotiveUser.v1";
 const CLOUD_API = "/api/db";
 const DISCORD_ALERT_API = "/api/discord-alert";
-const DISCORD_INVITE_URL = "PASTE_YOUR_DISCORD_INVITE_HERE";
+const DISCORD_INVITE_URL = "https://discord.gg/EpKfSMNBXm";
 let CLOUD_READY = false;
 let CLOUD_SYNC_TIMER = null;
 
