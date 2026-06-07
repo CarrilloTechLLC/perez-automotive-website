@@ -4,6 +4,9 @@
 
 const DB_KEY = "perezAutomotivePortal.v1";
 const SESSION_KEY = "perezAutomotiveUser.v1";
+const CLOUD_API = "/api/db";
+let CLOUD_READY = false;
+let CLOUD_SYNC_TIMER = null;
 
 const roles = {
   owner: "Owner / President",
@@ -98,7 +101,46 @@ function getDB() {
   }
 }
 
-function saveDB(db) { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
+async function initCloudSync() {
+  // D1 only works after the site is deployed on Cloudflare Pages.
+  // If the API/binding is not ready yet, the site falls back to browser localStorage.
+  if (location.protocol === "file:") return;
+  try {
+    const res = await fetch(CLOUD_API, { cache: "no-store" });
+    if (!res.ok) throw new Error(`D1 API returned ${res.status}`);
+    const payload = await res.json();
+    CLOUD_READY = true;
+    if (payload && payload.data) {
+      localStorage.setItem(DB_KEY, JSON.stringify(payload.data));
+    } else {
+      // First deploy: seed D1 with the current local starter data.
+      saveDB(getDB());
+    }
+    console.info("Perez Automotive D1 sync ready.");
+  } catch (err) {
+    console.warn("Perez Automotive D1 sync not active yet; using local browser storage.", err);
+  }
+}
+
+async function pushCloudDB(db) {
+  try {
+    await fetch(CLOUD_API, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(db)
+    });
+  } catch (err) {
+    console.warn("Could not sync Perez Automotive data to D1.", err);
+  }
+}
+
+function saveDB(db) {
+  localStorage.setItem(DB_KEY, JSON.stringify(db));
+  if (CLOUD_READY) {
+    clearTimeout(CLOUD_SYNC_TIMER);
+    CLOUD_SYNC_TIMER = setTimeout(() => pushCloudDB(db), 300);
+  }
+}
 function currentUser() {
   const email = sessionStorage.getItem(SESSION_KEY);
   return demoUsers.find(u => u.email === email) || null;
@@ -757,4 +799,4 @@ function route() {
 $("#menuToggle").addEventListener("click", () => $("#mainNav").classList.toggle("open"));
 $("#mainNav").addEventListener("click", () => $("#mainNav").classList.remove("open"));
 window.addEventListener("hashchange", route);
-route();
+initCloudSync().finally(route);

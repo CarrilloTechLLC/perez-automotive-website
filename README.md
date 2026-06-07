@@ -57,3 +57,29 @@ perez-automotive-website/
 ## Notes for upgrading later
 
 To make records shared across every staff member, replace the localStorage helpers in `app.js` with database calls. Recommended next step for Cloudflare is Cloudflare D1 with a Pages Function API.
+
+## Cloudflare D1 shared database setup
+
+This D1-ready version includes:
+
+- `functions/api/db.js` — Cloudflare Pages Function at `/api/db`
+- `schema.sql` — the D1 table you must create once
+- Updated `app.js` — syncs dashboard data to D1 when deployed on Cloudflare Pages
+
+### Cloudflare settings
+
+1. Create a D1 database named `perez-automotive-db`.
+2. Open your Pages project: `perez-automotive-website`.
+3. Go to Settings → Bindings.
+4. Add a D1 database binding.
+5. Variable name must be exactly: `DB`.
+6. Select your `perez-automotive-db` database.
+7. Redeploy the Pages project.
+
+### Run schema.sql
+
+Open the D1 database console and run the contents of `schema.sql` once.
+
+### Important security note
+
+This version is built for GTA/Eclipse RP record keeping and easy setup. For a real secure private dashboard, protect the site with Cloudflare Access or add server-side authentication before using sensitive records.
