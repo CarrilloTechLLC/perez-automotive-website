@@ -45,6 +45,32 @@ const number = (value) => Number(value || 0);
 const id = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`;
 const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
 const proofLink = (url) => url ? `<a class="gold" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">Open proof</a>` : `<span class="muted">No proof</span>`;
+const initials = (name = "") => String(name).split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase() || "").join("") || "PA";
+const isManagementRole = (user = currentUser()) => user && ["owner", "coowner", "gm"].includes(user.role);
+
+function staffDefaults(s = {}, index = 0) {
+  return {
+    publicVisible: s.publicVisible !== false && s.showOnAbout !== "No",
+    showOnAbout: s.showOnAbout || (s.publicVisible === false ? "No" : "Yes"),
+    photo: s.photo || "",
+    bio: s.bio || s.notes || "",
+    displayOrder: Number.isFinite(Number(s.displayOrder)) ? Number(s.displayOrder) : index + 1
+  };
+}
+
+function normalizeDB(db) {
+  const seeded = seedData();
+  let changed = false;
+  for (const key of ["inventory", "applications", "purchaseRequests", "sales", "customers", "staff", "treasury", "payouts", "logs"]) {
+    if (!Array.isArray(db[key])) { db[key] = seeded[key] || []; changed = true; }
+  }
+  db.staff = db.staff.map((member, index) => {
+    const merged = { ...staffDefaults(member, index), ...member };
+    if (merged.publicVisible !== (member.publicVisible ?? true) || !member.showOnAbout || !Object.prototype.hasOwnProperty.call(member, "displayOrder")) changed = true;
+    return merged;
+  });
+  return { db, changed };
+}
 
 function seedData() {
   return {
@@ -66,12 +92,12 @@ function seedData() {
       { id: id("cust"), name: "Maya Bennett", phone: "555-0199", interest: "Luxury coupe under $90k", notes: "Interested in test drive after inventory refresh.", date: now() }
     ],
     staff: [
-      { id: id("staff"), name: "Giovanni Perez", position: "Owner / President", phone: "438-6918", role: "owner", notes: "Full access." },
-      { id: id("staff"), name: "Savannah Perez", position: "Co-Owner / Vice President", phone: "", role: "coowner", notes: "Full access." },
-      { id: id("staff"), name: "Alex Moreno", position: "General Manager", phone: "555-0102", role: "gm", notes: "Can manage staff, applications, inventory, and sales." },
-      { id: id("staff"), name: "Marco Vega", position: "Vehicle Sourcing Manager", phone: "555-0103", role: "sourcer", notes: "Sourcing leads and purchase requests." },
-      { id: id("staff"), name: "Elena Cruz", position: "Sales & Finance Representative", phone: "555-0104", role: "sales", notes: "Customer records and closing deals." },
-      { id: id("staff"), name: "Dante Ruiz", position: "Service & Inventory Clerk", phone: "555-0105", role: "clerk", notes: "Inspections, detailing notes, inventory updates." }
+      { id: id("staff"), name: "Giovanni Perez", position: "Owner / President", phone: "438-6918", role: "owner", photo: "", showOnAbout: "Yes", publicVisible: true, displayOrder: 1, bio: "Founder and lead decision-maker for Perez Automotive. Oversees approvals, treasury, staff, and the dealership standard.", notes: "Full access." },
+      { id: id("staff"), name: "Savannah Perez", position: "Co-Owner / Vice President", phone: "", role: "coowner", photo: "", showOnAbout: "Yes", publicVisible: true, displayOrder: 2, bio: "Co-owner focused on leadership, customer trust, staff accountability, and daily dealership operations.", notes: "Full access." },
+      { id: id("staff"), name: "Alex Moreno", position: "General Manager", phone: "555-0102", role: "gm", photo: "", showOnAbout: "Yes", publicVisible: true, displayOrder: 3, bio: "Manages staff records, applications, inventory flow, sale records, and daily business activity.", notes: "Can manage staff, applications, inventory, and sales." },
+      { id: id("staff"), name: "Marco Vega", position: "Vehicle Sourcing Manager", phone: "555-0103", role: "sourcer", photo: "", showOnAbout: "Yes", publicVisible: true, displayOrder: 4, bio: "Finds strong vehicle leads, negotiates purchase prices, and submits sourcing deals for approval.", notes: "Sourcing leads and purchase requests." },
+      { id: id("staff"), name: "Elena Cruz", position: "Sales & Finance Representative", phone: "555-0104", role: "sales", photo: "", showOnAbout: "Yes", publicVisible: true, displayOrder: 5, bio: "Handles customer records, test-drive notes, sale records, and closing support for premium vehicle deals.", notes: "Customer records and closing deals." },
+      { id: id("staff"), name: "Dante Ruiz", position: "Service & Inventory Clerk", phone: "555-0105", role: "clerk", photo: "", showOnAbout: "Yes", publicVisible: true, displayOrder: 6, bio: "Updates inspections, detailing notes, repair notes, stock numbers, photos, and inventory readiness.", notes: "Inspections, detailing notes, inventory updates." }
     ],
     treasury: [
       { id: id("tre"), date: now(), type: "Deposit", description: "Starting business treasury", amount: 125000, handledBy: "Giovanni Perez", approvedBy: "Giovanni Perez", notes: "Initial manual balance for RP business records.", proof: "", approved: true },
@@ -94,7 +120,11 @@ function getDB() {
     localStorage.setItem(DB_KEY, JSON.stringify(seeded));
     return seeded;
   }
-  try { return JSON.parse(saved); } catch {
+  try {
+    const { db, changed } = normalizeDB(JSON.parse(saved));
+    if (changed) localStorage.setItem(DB_KEY, JSON.stringify(db));
+    return db;
+  } catch {
     const seeded = seedData();
     localStorage.setItem(DB_KEY, JSON.stringify(seeded));
     return seeded;
@@ -244,9 +274,27 @@ function vehicleCard(v) {
   </article>`;
 }
 
+function teamCard(s) {
+  const roleLabel = roles[s.role] || s.position || "Staff Member";
+  return `<article class="team-card card hover">
+    <div class="team-avatar">${s.photo ? `<img src="${escapeHtml(s.photo)}" alt="${escapeHtml(s.name)}" />` : `<span>${escapeHtml(initials(s.name))}</span>`}</div>
+    <div class="team-body">
+      <span class="badge">${escapeHtml(roleLabel)}</span>
+      <h3>${escapeHtml(s.name)}</h3>
+      <p class="team-position">${escapeHtml(s.position || roleLabel)}</p>
+      <p>${escapeHtml(s.bio || s.notes || "Perez Automotive team member.")}</p>
+      ${s.phone ? `<p class="muted"><strong>Contact:</strong> ${escapeHtml(s.phone)}</p>` : ``}
+    </div>
+  </article>`;
+}
+
 function renderAbout() {
+  const db = getDB();
+  const team = db.staff
+    .filter(s => s.showOnAbout !== "No" && s.publicVisible !== false)
+    .sort((a, b) => number(a.displayOrder) - number(b.displayOrder) || String(a.name).localeCompare(String(b.name)));
   $("#app").innerHTML = `
-    ${pageHeader("About Perez Automotive", "More Than A <span>Used Car Lot</span>", "Perez Automotive is built to feel like a serious premium automotive operation for GTA/Eclipse RP: dealership, custom build shop, sourcing desk, trade-in center, consignment operation, and service record system in one.")}
+    ${pageHeader("About Us", "More Than A <span>Used Car Lot</span>", "Perez Automotive is built to feel like a serious premium automotive operation for GTA/Eclipse RP: dealership, custom build shop, sourcing desk, trade-in center, consignment operation, and service record system in one.")}
     <section class="section tight">
       <div class="grid cols-2">
         <article class="card"><h3>Our Standard</h3><p>Every record is handled like a real dealership file: vehicle source, purchase cost, repair cost, detailing cost, listing price, lowest accepted price, sale proof, commission payout, and final business profit.</p></article>
@@ -254,6 +302,9 @@ function renderAbout() {
         <article class="card"><h3>Manual RP Records</h3><p>This website does not include real money processing. It is built for manual GTA/Eclipse RP record keeping, proof links, applications, approvals, and business management.</p></article>
         <article class="card"><h3>Location</h3><p>Perez Automotive operates from <strong>74 Spanish Ave</strong>, serving the Los Santos community with vehicle sales, sourcing, custom builds, repairs, detailing, trade-ins, and customer service.</p></article>
       </div>
+      <div class="divider"></div>
+      <div class="page-title team-heading"><div class="kicker">Our Team</div><h1>Meet The <span>Employees</span></h1><p class="lead">Every employee shown here is controlled from the private staff dashboard. Management can update names, jobs, photos, bios, and whether each person appears on this public About Us page.</p></div>
+      <div class="team-grid">${team.length ? team.map(teamCard).join("") : `<div class="notice">No public staff members are listed yet.</div>`}</div>
     </section>
   `;
 }
@@ -572,25 +623,45 @@ function dashApplications() {
 }
 function appStatusButtons(appId) { return ["Pending", "Interviewed", "Accepted", "Denied"].map(s => `<button class="btn small" onclick="setApplicationStatus('${appId}','${s}')">${s}</button>`).join(" "); }
 
+function roleOptions(selected = "clerk") {
+  return Object.entries(roles).map(([value, label]) => `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
+}
+
 function dashStaff() {
   const db = getDB();
-  const allow = can("staff");
-  return `${dashboardHeader("Staff Roster & Performance")}
-    ${allow ? `<form id="staffForm" class="card"><h3>Add Staff Member</h3><div class="form-grid">
+  const allow = can("staff") || isManagementRole();
+  return `${dashboardHeader("Staff Roster & Public About Us Editor", "Management-only employee profile controls")}
+    ${allow ? `<form id="staffForm" class="card"><h3 id="staffFormTitle">Add / Edit Employee</h3><p class="muted">Management can edit the employees shown on the public About Us page from here.</p><input type="hidden" name="editId" id="staffEditId" />
+    <div class="form-grid">
       <label><span>Staff Name</span><input class="input" name="name" required /></label>
       <label><span>Phone</span><input class="input" name="phone" /></label>
-      <label><span>Position</span><input class="input" name="position" required /></label>
-      <label><span>Role</span><select class="select" name="role"><option value="gm">General Manager</option><option value="sourcer">Vehicle Sourcing Manager</option><option value="sales">Sales & Finance Representative</option><option value="clerk">Service & Inventory Clerk</option></select></label>
-      <label class="full"><span>Notes</span><textarea class="textarea" name="notes"></textarea></label>
-    </div><div class="actions"><button class="btn primary" type="submit">Save Staff Member</button></div></form>` : `<div class="notice">Only management can add or edit staff records.</div>`}
-    <div class="divider"></div><div class="grid cols-3">${db.staff.map(s => staffCard(s, db)).join("")}</div>`;
+      <label><span>Position / Job Title</span><input class="input" name="position" required placeholder="Owner / Sales Rep / Service Clerk" /></label>
+      <label><span>Role / Permission Level</span><select class="select" name="role">${roleOptions()}</select></label>
+      <label><span>Profile Photo URL</span><input class="input" name="photo" placeholder="Optional image link" /></label>
+      <label><span>Show On Public About Us Page?</span><select class="select" name="showOnAbout"><option>Yes</option><option>No</option></select></label>
+      <label><span>Display Order</span><input class="input" name="displayOrder" type="number" value="99" /></label>
+      <label class="full"><span>Public About Us Bio</span><textarea class="textarea" name="bio" placeholder="Short public description of what this employee does."></textarea></label>
+      <label class="full"><span>Private Staff Notes</span><textarea class="textarea" name="notes"></textarea></label>
+    </div><div class="actions"><button class="btn primary" id="staffSaveBtn" type="submit">Save Employee</button><button class="btn ghost" type="button" id="clearStaffEdit">Clear Form</button><a class="btn" href="#about">View About Us Page</a></div></form>` : `<div class="notice">Only management can add or edit public employee profiles.</div>`}
+    <div class="divider"></div><div class="grid cols-3">${db.staff.map(s => staffCard(s, db, allow)).join("")}</div>`;
 }
-function staffCard(s, db) {
+function staffCard(s, db, allow = false) {
   const sourced = db.inventory.filter(v => v.sourcedBy === s.name).length;
   const sold = db.sales.filter(v => v.soldBy === s.name).length;
   const commission = db.payouts.filter(p => p.staff === s.name).reduce((sum, p) => sum + number(p.amount), 0);
   const profit = db.sales.filter(v => v.soldBy === s.name || v.sourcedBy === s.name).reduce((sum, sale) => sum + number(sale.businessProfit), 0);
-  return `<article class="card"><span class="badge">${escapeHtml(roles[s.role] || s.position)}</span><h3>${escapeHtml(s.name)}</h3><p>${escapeHtml(s.position)}</p><div class="divider"></div><p>Vehicles sourced: <strong>${sourced}</strong><br>Vehicles sold: <strong>${sold}</strong><br>Total profit brought in: <strong class="money">${money(profit)}</strong><br>Total commission paid: <strong>${money(commission)}</strong></p><p class="muted">${escapeHtml(s.notes || "")}</p></article>`;
+  const publicStatus = s.showOnAbout === "No" || s.publicVisible === false ? "Hidden from About Us" : "Shown on About Us";
+  return `<article class="card staff-card">
+    <div class="team-avatar small">${s.photo ? `<img src="${escapeHtml(s.photo)}" alt="${escapeHtml(s.name)}" />` : `<span>${escapeHtml(initials(s.name))}</span>`}</div>
+    <span class="badge">${escapeHtml(roles[s.role] || s.position)}</span>
+    <h3>${escapeHtml(s.name)}</h3>
+    <p>${escapeHtml(s.position)}</p>
+    <p class="muted">${escapeHtml(publicStatus)} · Order ${escapeHtml(s.displayOrder ?? "99")}</p>
+    <div class="divider"></div>
+    <p>Vehicles sourced: <strong>${sourced}</strong><br>Vehicles sold: <strong>${sold}</strong><br>Total profit brought in: <strong class="money">${money(profit)}</strong><br>Total commission paid: <strong>${money(commission)}</strong></p>
+    <p class="muted">${escapeHtml(s.bio || s.notes || "")}</p>
+    ${allow ? `<div class="actions"><button class="btn small" onclick="editStaff('${s.id}')">Edit</button><button class="btn small danger" onclick="deleteStaff('${s.id}')">Remove</button></div>` : ``}
+  </article>`;
 }
 
 function dashTreasury() {
@@ -708,7 +779,46 @@ function bindDashboardForms(section) {
     $("#customerForm").addEventListener("submit", (e) => { e.preventDefault(); const data = formData(e.target); const db = getDB(); db.customers.unshift({ id: id("cust"), ...data }); db.logs.unshift({ id: id("log"), action: "Customer record added", staff: userName(), date: now(), notes: `${data.name} added to customer records.` }); saveDB(db); toast("Customer saved."); renderDashboard("customers"); });
   }
   if (section === "staff" && $("#staffForm")) {
-    $("#staffForm").addEventListener("submit", (e) => { e.preventDefault(); const data = formData(e.target); const db = getDB(); db.staff.unshift({ id: id("staff"), ...data }); db.logs.unshift({ id: id("log"), action: "Staff member added", staff: userName(), date: now(), notes: `${data.name} added as ${data.position}.` }); saveDB(db); toast("Staff member saved."); renderDashboard("staff"); });
+    const resetStaffForm = () => {
+      const form = $("#staffForm");
+      form.reset();
+      form.editId.value = "";
+      form.displayOrder.value = "99";
+      form.showOnAbout.value = "Yes";
+      $("#staffFormTitle").textContent = "Add / Edit Employee";
+      $("#staffSaveBtn").textContent = "Save Employee";
+    };
+    $("#clearStaffEdit").addEventListener("click", resetStaffForm);
+    $("#staffForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (!isManagementRole()) return toast("Only management can edit employee profiles.");
+      const data = formData(e.target);
+      const db = getDB();
+      const editing = Boolean(data.editId);
+      const staffRecord = {
+        id: editing ? data.editId : id("staff"),
+        name: data.name,
+        phone: data.phone || "",
+        position: data.position,
+        role: data.role,
+        photo: data.photo || "",
+        showOnAbout: data.showOnAbout || "Yes",
+        publicVisible: data.showOnAbout !== "No",
+        displayOrder: number(data.displayOrder || 99),
+        bio: data.bio || "",
+        notes: data.notes || ""
+      };
+      if (editing) {
+        const index = db.staff.findIndex(s => s.id === data.editId);
+        if (index >= 0) db.staff[index] = { ...db.staff[index], ...staffRecord };
+        else db.staff.unshift(staffRecord);
+      } else {
+        db.staff.unshift(staffRecord);
+      }
+      db.staff.sort((a, b) => number(a.displayOrder) - number(b.displayOrder) || String(a.name).localeCompare(String(b.name)));
+      db.logs.unshift({ id: id("log"), action: editing ? "Staff member updated" : "Staff member added", staff: userName(), date: now(), notes: `${data.name} saved as ${data.position}. Public About Us: ${staffRecord.showOnAbout}.` });
+      saveDB(db); toast(editing ? "Employee profile updated." : "Employee profile saved."); renderDashboard("staff");
+    });
   }
   if (section === "treasury" && $("#treasuryForm")) {
     $("#treasuryForm").addEventListener("submit", (e) => {
@@ -784,6 +894,38 @@ window.approvePayout = function approvePayout(pId) {
   db.treasury.unshift({ id: id("tre"), date: now(), type: "Payout", description: p.reason, amount: -Math.abs(number(p.amount)), handledBy: p.staff, approvedBy: userName(), notes: `Approved staff payout for ${p.staff}.`, proof: "", approved: true });
   db.logs.unshift({ id: id("log"), action: "Payout approved", staff: userName(), date: now(), notes: `${p.staff} payout approved for ${money(p.amount)}.` });
   saveDB(db); toast("Payout approved and treasury updated."); renderDashboard("payouts");
+};
+
+window.editStaff = function editStaff(staffId) {
+  if (!isManagementRole()) return toast("Only management can edit employee profiles.");
+  const form = $("#staffForm");
+  if (!form) return;
+  const staff = getDB().staff.find(s => s.id === staffId);
+  if (!staff) return toast("Staff member not found.");
+  form.editId.value = staff.id || "";
+  form.name.value = staff.name || "";
+  form.phone.value = staff.phone || "";
+  form.position.value = staff.position || "";
+  form.role.value = staff.role || "clerk";
+  form.photo.value = staff.photo || "";
+  form.showOnAbout.value = staff.showOnAbout || (staff.publicVisible === false ? "No" : "Yes");
+  form.displayOrder.value = staff.displayOrder ?? 99;
+  form.bio.value = staff.bio || "";
+  form.notes.value = staff.notes || "";
+  $("#staffFormTitle").textContent = `Editing ${staff.name}`;
+  $("#staffSaveBtn").textContent = "Update Employee";
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
+};
+
+window.deleteStaff = function deleteStaff(staffId) {
+  if (!isManagementRole()) return toast("Only management can remove employee profiles.");
+  const db = getDB();
+  const staff = db.staff.find(s => s.id === staffId);
+  if (!staff) return;
+  if (!confirm(`Remove ${staff.name} from the staff roster and About Us page?`)) return;
+  db.staff = db.staff.filter(s => s.id !== staffId);
+  db.logs.unshift({ id: id("log"), action: "Staff member removed", staff: userName(), date: now(), notes: `${staff.name} was removed from the roster.` });
+  saveDB(db); toast("Employee removed."); renderDashboard("staff");
 };
 
 function route() {
